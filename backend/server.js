@@ -1,11 +1,15 @@
 const express = require("express");
 const cors = require("cors");
 const XLSX = require("xlsx");
+const path = require("path"); // เพิ่ม path สำหรับจัดการตำแหน่งไฟล์
 const app = express();
 
-app.use(cors());
+// 1. ปรับปรุง CORS ให้รองรับ GitHub Pages ของคุณ
+app.use(cors({
+    origin: "https://serox5.github.io" 
+}));
 
-// ฟังก์ชันช่วยคำนวณสถิติ (Avg, Min, Max และ Diff สำหรับค่าสะสม)
+// ฟังก์ชันช่วยคำนวณสถิติ
 const getStats = (arr) => {
     const validData = arr.filter(v => v !== null && !isNaN(v));
     return {
@@ -19,8 +23,11 @@ const getStats = (arr) => {
 app.get("/api/daily-summary", (req, res) => {
     try {
         const { sheet } = req.query; 
-        const targetSheet = sheet || "Manage"; // Default เป็น Manage
-        const workbook = XLSX.readFile("./data.xlsx");
+        const targetSheet = sheet || "Manage";
+        
+        // 2. ใช้ path.join เพื่อให้ Server หาไฟล์ data.xlsx เจอแน่นอน
+        const filePath = path.join(__dirname, "data.xlsx");
+        const workbook = XLSX.readFile(filePath);
         
         if (!workbook.SheetNames.includes(targetSheet)) {
             return res.status(400).json({ error: `Sheet "${targetSheet}" not found` });
@@ -32,7 +39,10 @@ app.get("/api/daily-summary", (req, res) => {
 
         rows.forEach(row => {
             if (!row["Time"]) return;
-            const dateKey = new Date(row["Time"]).toISOString().split("T")[0];
+            // ตรวจสอบ format วันที่ป้องกัน error
+            const dateObj = new Date(row["Time"]);
+            if (isNaN(dateObj)) return; 
+            const dateKey = dateObj.toISOString().split("T")[0];
 
             if (!grouped[dateKey]) {
                 grouped[dateKey] = {
@@ -56,7 +66,6 @@ app.get("/api/daily-summary", (req, res) => {
             g.power.push(Number(row["Active Power_Total"] || 0));
             g.energy.push(Number(row["Total_Energy"] || 0));
 
-            // ดึงค่า Turbo Blower (รองรับชื่อ column ทั้งแบบสั้นใน Original และแบบยาวใน Manage)
             g.tb1_sf.push(Number(row["SUCTION FLOW RATE TB1"] || row["SUCTION FLOW RATE"] || 0));
             g.tb1_sp.push(Number(row["SUCTION PRRESSURE TB1"] || row["SUCTION PRRESSURE"] || 0));
             g.tb1_dp.push(Number(row["DISCHARGE PRESSURE TB1"] || row["DISCHARGE PRESSURE"] || 0));
@@ -92,4 +101,6 @@ app.get("/api/daily-summary", (req, res) => {
     }
 });
 
-app.listen(5000, () => console.log("Server running on port 5000"));
+// 3. ปรับ Port ให้รองรับ Environment Variable ของ Render
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
